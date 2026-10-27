@@ -1300,6 +1300,12 @@ def _build_checkpoint_conversion_mapping():
                 source_patterns=r"\.self_attn\.gate_proj\.", target_patterns=".self_attn.head_gate.g_proj."
             ),
         ],
+        "lfm3_omni": [
+            WeightRenaming(
+                source_patterns=r"\.self_attn\.gate_proj\.", target_patterns=".self_attn.head_gate.g_proj."
+            ),
+            *_LFM3_SPEECH_CONVERSIONS,
+        ],
         "lfm2_moe": [
             WeightConverter(
                 source_patterns=[
