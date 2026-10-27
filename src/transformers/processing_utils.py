@@ -138,6 +138,7 @@ MODALITY_TO_BASE_CLASS_MAPPING = {
 
 # The kwargs of a processor's `from_pretrained` that also apply to its audio tokenizer's `from_pretrained`
 AUDIO_TOKENIZER_KWARGS = ("cache_dir", "force_download", "proxies", "token", "local_files_only", "device_map", "dtype")
+AUDIO_TOKENIZER_SUBFOLDER = "audio_tokenizer"
 
 
 def _get_modality_for_attribute(attribute_name: str) -> str:
@@ -1030,7 +1031,10 @@ class ProcessorMixin(PushToHubMixin):
                 if modality == "tokenizer":
                     tokenizer_attributes.add(attribute)
 
-        dict_to_copy = {k: v for k, v in self.__dict__.items() if k not in tokenizer_attributes}
+        # the audio tokenizer is a model: it is serialized as a reference or saved in its own subfolder, never copied
+        dict_to_copy = {
+            k: v for k, v in self.__dict__.items() if k not in tokenizer_attributes and k != "audio_tokenizer"
+        }
         output = copy.deepcopy(dict_to_copy)
 
         # Get the kwargs in `__init__`.
@@ -1039,7 +1043,7 @@ class ProcessorMixin(PushToHubMixin):
         # or in the attributes
         attrs_to_save = list(sig.parameters) + self.__class__.get_attributes()
         # extra attributes to be kept
-        attrs_to_save += ["auto_map"]
+        attrs_to_save += ["auto_map", "audio_tokenizer", "audio_tokenizer_subfolder"]
 
         if "chat_template" in output:
             del output["chat_template"]
@@ -1056,13 +1060,19 @@ class ProcessorMixin(PushToHubMixin):
                     dictionary[key] = cast_array_to_list(value)
             return dictionary
 
-        # Special case, add `audio_tokenizer` dict which points to model weights and path
-        if "audio_tokenizer" in output:
-            audio_tokenizer_dict = {
-                "audio_tokenizer_class": self.audio_tokenizer.__class__.__name__,
-                "audio_tokenizer_name_or_path": self.audio_tokenizer.name_or_path,
-            }
-            output["audio_tokenizer"] = audio_tokenizer_dict
+        # Special case, the audio tokenizer is a model: it is saved as a reference to its own checkpoint, or in a
+        # subfolder of the processor directory when it came bundled or has no checkpoint of its own
+        if getattr(self, "audio_tokenizer", None) is not None:
+            audio_tokenizer_subfolder = output.get("audio_tokenizer_subfolder")
+            if audio_tokenizer_subfolder is None and not self.audio_tokenizer.name_or_path:
+                audio_tokenizer_subfolder = AUDIO_TOKENIZER_SUBFOLDER
+            if audio_tokenizer_subfolder is not None:
+                output["audio_tokenizer_subfolder"] = audio_tokenizer_subfolder
+            else:
+                output["audio_tokenizer"] = {
+                    "audio_tokenizer_class": self.audio_tokenizer.__class__.__name__,
+                    "audio_tokenizer_name_or_path": self.audio_tokenizer.name_or_path,
+                }
 
         # Serialize attributes as a dict
         output = {
@@ -1198,6 +1208,11 @@ class ProcessorMixin(PushToHubMixin):
                         f.write(template)
                     logger.info(f"chat template saved in {template_filepath}")
 
+        # A bundled audio tokenizer is saved in its subfolder, next to the processor files
+        audio_tokenizer_subfolder = self.to_dict().get("audio_tokenizer_subfolder")
+        if audio_tokenizer_subfolder is not None:
+            self.audio_tokenizer.save_pretrained(os.path.join(save_directory, audio_tokenizer_subfolder))
+
         # Create a unified `preprocessor_config.json` and save all attributes as a composite config, except for tokenizers
         self.to_json_file(output_processor_file)
         logger.info(f"processor saved in {output_processor_file}")
@@ -1232,8 +1247,8 @@ class ProcessorMixin(PushToHubMixin):
         Returns:
             `tuple[Dict, Dict]`: The dictionary(ies) that will be used to instantiate the processor object.
         """
-        # The audio tokenizer (if any) lives in another repository: it gets the Hub access and placement kwargs only, not
-        # the ones that locate files in this repository (`revision`, `subfolder`) or override sub-processors.
+        # The audio tokenizer (if any) gets the Hub access and placement kwargs only, not the ones that override
+        # sub-processors; `revision` and `subfolder` locate files in this repository and apply to a bundled one alone.
         audio_tokenizer_kwargs = {key: kwargs[key] for key in AUDIO_TOKENIZER_KWARGS if key in kwargs}
 
         cache_dir = kwargs.pop("cache_dir", None)
@@ -1445,16 +1460,33 @@ class ProcessorMixin(PushToHubMixin):
         elif chat_templates:
             processor_dict["chat_template"] = chat_templates
 
-        # Audio tokenizer needs to load the model checkpoint first, because the saved
-        # json file contains only references to the model path and repo id
-        if resolved_audio_tokenizer_file is not None or "audio_tokenizer" in processor_dict:
-            if resolved_audio_tokenizer_file is not None:
-                reader = open(resolved_audio_tokenizer_file, "r", encoding="utf-8")
-                audio_tokenizer_dict = reader.read()
-                audio_tokenizer_dict = json.loads(audio_tokenizer_dict)
-            else:
-                audio_tokenizer_dict = processor_dict["audio_tokenizer"]
-
+        # The audio tokenizer is a model, loaded here: the saved json either references its own checkpoint
+        # (`audio_tokenizer_name_or_path`) or names the subfolder of this repository that bundles it
+        # (`audio_tokenizer_subfolder`), which follows this repository's revision and subfolder
+        if resolved_audio_tokenizer_file is not None:
+            reader = open(resolved_audio_tokenizer_file, "r", encoding="utf-8")
+            audio_tokenizer_dict = reader.read()
+            audio_tokenizer_dict = json.loads(audio_tokenizer_dict)
+        else:
+            audio_tokenizer_dict = processor_dict.get("audio_tokenizer")
+        audio_tokenizer_subfolder = processor_dict.get("audio_tokenizer_subfolder")
+        if kwargs.get("audio_tokenizer") is not None:
+            pass  # the caller's model replaces the saved one
+        elif audio_tokenizer_subfolder is not None:
+            # the bundled model's class is the processor's `audio_tokenizer_class` unless the json names one; the
+            # base class, which `AutoProcessor` reads the config with, names none and leaves the loading to it
+            class_name = (audio_tokenizer_dict or {}).get("audio_tokenizer_class") or getattr(
+                cls, "audio_tokenizer_class", None
+            )
+            if class_name is not None:
+                audio_tokenizer_class = cls.get_possibly_dynamic_module(class_name)
+                processor_dict["audio_tokenizer"] = audio_tokenizer_class.from_pretrained(
+                    pretrained_model_name_or_path,
+                    subfolder=os.path.join(subfolder, audio_tokenizer_subfolder),
+                    revision=revision,
+                    **audio_tokenizer_kwargs,
+                )
+        elif audio_tokenizer_dict is not None:
             audio_tokenizer_class = cls.get_possibly_dynamic_module(audio_tokenizer_dict["audio_tokenizer_class"])
             audio_tokenizer_path = audio_tokenizer_dict["audio_tokenizer_name_or_path"]
             processor_dict["audio_tokenizer"] = audio_tokenizer_class.from_pretrained(
@@ -1482,6 +1514,8 @@ class ProcessorMixin(PushToHubMixin):
         """
         processor_dict = processor_dict.copy()
         return_unused_kwargs = kwargs.pop("return_unused_kwargs", False)
+        # a bundled audio tokenizer is saved back into its subfolder
+        audio_tokenizer_subfolder = processor_dict.pop("audio_tokenizer_subfolder", None)
 
         # We have to pop up some unused (but specific) kwargs and then validate that it doesn't contain unused kwargs
         # If we don't pop, some specific kwargs will raise a warning or error
@@ -1509,6 +1543,8 @@ class ProcessorMixin(PushToHubMixin):
 
         # instantiate processor with used (and valid) kwargs only
         processor = cls(*args, **valid_kwargs)
+        if audio_tokenizer_subfolder is not None and getattr(processor, "audio_tokenizer", None) is not None:
+            processor.audio_tokenizer_subfolder = audio_tokenizer_subfolder
 
         logger.info(f"Processor {processor}")
         if return_unused_kwargs:
@@ -1746,6 +1782,8 @@ class ProcessorMixin(PushToHubMixin):
 
         # Get processor_dict first so we can use it to instantiate non-tokenizer sub-processors
         processor_dict, instantiation_kwargs = cls.get_processor_dict(pretrained_model_name_or_path, **kwargs)
+        # a model passed as `audio_tokenizer` is the processor's, not a loading kwarg of the sub-processors
+        kwargs.pop("audio_tokenizer", None)
         args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, processor_dict, **kwargs)
         return cls.from_args_and_dict(args, processor_dict, **instantiation_kwargs)
 
