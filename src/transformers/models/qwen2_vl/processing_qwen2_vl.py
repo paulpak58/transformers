@@ -80,7 +80,7 @@ class Qwen2VLProcessor(ProcessorMixin):
 
         vision_data = {}
         if image_sizes is not None:
-            images_kwargs = Qwen2VLProcessorKwargs._defaults.get("images_kwargs", {})
+            images_kwargs = Qwen2VLProcessorKwargs._defaults.get("images_kwargs", {}).copy()
             images_kwargs.update(kwargs)
             merge_size = images_kwargs.get("merge_size", None) or self.image_processor.merge_size
 
@@ -92,7 +92,7 @@ class Qwen2VLProcessor(ProcessorMixin):
             vision_data.update({"num_image_tokens": num_image_tokens, "num_image_patches": num_image_patches})
 
         if video_sizes is not None:
-            videos_kwargs = Qwen2VLProcessorKwargs._defaults.get("videos_kwargs", {})
+            videos_kwargs = Qwen2VLProcessorKwargs._defaults.get("videos_kwargs", {}).copy()
             videos_kwargs.update(kwargs)
             merge_size = videos_kwargs.get("merge_size", None) or self.video_processor.merge_size
             num_video_patches = [

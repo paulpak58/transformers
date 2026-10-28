@@ -30,7 +30,7 @@ from ...modeling_flash_attention_utils import FlashAttentionKwargs
 from ...modeling_outputs import BaseModelOutputWithPast, BaseModelOutputWithPooling
 from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, slice_logits_to_keep
-from ...processing_utils import ProcessingKwargs, Unpack, VideosKwargs
+from ...processing_utils import ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
 from ...utils import auto_docstring, is_torchvision_available, logging
 from ...utils.generic import (
     merge_with_config_defaults,

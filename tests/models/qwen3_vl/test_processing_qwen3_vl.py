@@ -63,6 +63,20 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertTrue("num_image_patches" in output)
         self.assertEqual(len(output["num_image_patches"]), 3)
 
+    def test_get_num_vision_tokens_keeps_the_defaults(self):
+        import copy
+
+        from transformers.models.qwen3_vl.processing_qwen3_vl import Qwen3VLProcessorKwargs
+
+        processor = self.get_processor()
+        defaults = copy.deepcopy(Qwen3VLProcessorKwargs._defaults)
+        sizes = {"image_sizes": [(100, 100)], "video_sizes": [(4, 100, 100)]}
+        expected = processor._get_num_multimodal_tokens(**sizes)
+        processor._get_num_multimodal_tokens(**sizes, size={"shortest_edge": 28 * 28, "longest_edge": 56 * 56})
+        # the call's kwargs must not leak into the class-level defaults of the next call
+        self.assertEqual(Qwen3VLProcessorKwargs._defaults, defaults)
+        self.assertEqual(processor._get_num_multimodal_tokens(**sizes), expected)
+
     def test_model_input_names(self):
         processor = self.get_processor()
 
