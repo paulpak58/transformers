@@ -1267,6 +1267,11 @@ def _build_checkpoint_conversion_mapping():
                 source_patterns=r"\.self_attn\.gate_proj\.", target_patterns=".self_attn.head_gate.g_proj."
             ),
         ],
+        "lfm3_vl": [
+            WeightRenaming(
+                source_patterns=r"\.self_attn\.gate_proj\.", target_patterns=".self_attn.head_gate.g_proj."
+            ),
+        ],
         "lfm2_moe": [
             WeightConverter(
                 source_patterns=[
