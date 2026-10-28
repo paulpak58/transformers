@@ -170,6 +170,11 @@ class CohereCompassProcessor(ProcessorMixin):
     def model_input_names(self):
         return super().model_input_names + ["mm_token_type_ids"]
 
+    def _process_videos(self, videos, **kwargs):
+        # the placeholder timestamps need the metadata; `__call__` still drops it from the output unless asked for
+        kwargs["return_metadata"] = True
+        return super()._process_videos(videos, **kwargs)
+
     def _calculate_timestamps(self, indices: list[int] | np.ndarray, video_fps: float, merge_size: int = 2):
         if not isinstance(indices, list):
             indices = indices.tolist()
