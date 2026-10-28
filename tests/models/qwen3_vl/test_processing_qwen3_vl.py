@@ -77,6 +77,22 @@ class Qwen3VLProcessorTest(ProcessorTesterMixin, unittest.TestCase):
         self.assertEqual(Qwen3VLProcessorKwargs._defaults, defaults)
         self.assertEqual(processor._get_num_multimodal_tokens(**sizes), expected)
 
+    def test_return_metadata_false_keeps_the_frame_timestamps(self):
+        processor = self.get_processor()
+        video = self.prepare_videos_inputs()
+        text = f"Video: {self.video_token}"
+        expected = processor(text=text, videos=[video], do_sample_frames=False)
+        self.assertNotIn("video_metadata", expected)
+
+        # the timestamps in the placeholder come from the metadata even when the caller does not want it back
+        inputs = processor(text=text, videos=[video], do_sample_frames=False, return_metadata=False)
+        self.assertNotIn("video_metadata", inputs)
+        self.assertEqual(inputs["input_ids"], expected["input_ids"])
+
+        inputs = processor(text=text, videos=[video], do_sample_frames=False, return_metadata=True)
+        self.assertIn("video_metadata", inputs)
+        self.assertEqual(inputs["input_ids"], expected["input_ids"])
+
     def test_model_input_names(self):
         processor = self.get_processor()
 

@@ -149,5 +149,10 @@ class VideoLlama3Processor(ProcessorMixin):
             **kwargs,
         )
 
+    def _process_videos(self, videos, **kwargs):
+        # the placeholder timestamps need the metadata; `__call__` still drops it from the output unless asked for
+        kwargs["return_metadata"] = True
+        return super()._process_videos(videos, **kwargs)
+
 
 __all__ = ["VideoLlama3Processor"]

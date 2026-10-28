@@ -915,6 +915,11 @@ class Qwen3VLProcessor(Qwen2VLProcessor):
             else tokenizer.convert_tokens_to_ids(self.vision_end_token)
         )
 
+    def _process_videos(self, videos, **kwargs):
+        # the placeholder timestamps need the metadata; `__call__` still drops it from the output unless asked for
+        kwargs["return_metadata"] = True
+        return ProcessorMixin._process_videos(self, videos, **kwargs)
+
     def replace_video_token(self, video_inputs: dict, video_idx: int, **kwargs) -> str:
         merge_length = self.video_processor.merge_size**2
         num_frames = video_inputs["video_grid_thw"][video_idx][0]
