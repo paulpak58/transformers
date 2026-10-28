@@ -30,7 +30,7 @@ from ...modeling_flash_attention_utils import FlashAttentionKwargs
 from ...modeling_outputs import BaseModelOutputWithPast, BaseModelOutputWithPooling
 from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, slice_logits_to_keep
-from ...processing_utils import ProcessingKwargs, Unpack, VideosKwargs
+from ...processing_utils import ProcessingKwargs, ProcessorMixin, Unpack, VideosKwargs
 from ...utils import auto_docstring, is_torchvision_available, logging
 from ...utils.generic import (
     merge_with_config_defaults,
@@ -914,6 +914,11 @@ class Qwen3VLProcessor(Qwen2VLProcessor):
             if getattr(tokenizer, "vision_end_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.vision_end_token)
         )
+
+    def _process_videos(self, videos, **kwargs):
+        # the placeholder timestamps need the metadata; `__call__` still drops it from the output unless asked for
+        kwargs["return_metadata"] = True
+        return ProcessorMixin._process_videos(self, videos, **kwargs)
 
     def replace_video_token(self, video_inputs: dict, video_idx: int, **kwargs) -> str:
         merge_length = self.video_processor.merge_size**2

@@ -154,6 +154,11 @@ class Cosmos3EdgeProcessor(ProcessorMixin):
     def model_input_names(self):
         return super().model_input_names + ["mm_token_type_ids"]
 
+    def _process_videos(self, videos, **kwargs):
+        # the placeholder timestamps need the metadata; `__call__` still drops it from the output unless asked for
+        kwargs["return_metadata"] = True
+        return super()._process_videos(videos, **kwargs)
+
     @staticmethod
     def _calculate_timestamps(
         indices: list[int] | np.ndarray,
