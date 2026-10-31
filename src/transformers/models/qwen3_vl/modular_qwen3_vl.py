@@ -386,7 +386,7 @@ class Qwen3VLVisionModel(Qwen3VLPreTrainedModel):
         "attentions": Qwen3VLVisionAttention,
     }
 
-    def __init__(self, config, *inputs, **kwargs) -> None:
+    def __init__(self, config: Qwen3VLVisionConfig, *inputs, **kwargs) -> None:
         super().__init__(config, *inputs, **kwargs)
         self.spatial_merge_size = config.spatial_merge_size
         self.patch_size = config.patch_size
@@ -598,7 +598,7 @@ class Qwen3VLTextModel(Qwen3VLPreTrainedModel, Qwen3Model):
 
 @auto_docstring
 class Qwen3VLModel(Qwen2VLModel):
-    def __init__(self, config):
+    def __init__(self, config: Qwen3VLConfig):
         super().__init__(config)
         self.visual = AutoModel.from_config(config.vision_config)
         self.language_model = AutoModel.from_config(config.text_config)
@@ -919,6 +919,8 @@ class Qwen3VLProcessor(Qwen2VLProcessor):
         merge_length = self.video_processor.merge_size**2
         num_frames = video_inputs["video_grid_thw"][video_idx][0]
         frame_seqlen = video_inputs["video_grid_thw"][video_idx][1:].prod() // merge_length
+        if "video_metadata" not in video_inputs:
+            raise ValueError("The frame timestamps need the video metadata, `return_metadata=False` is not supported")
         metadata = video_inputs["video_metadata"][video_idx]
         video_placeholder = ""
 
